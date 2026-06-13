@@ -165,14 +165,56 @@ curl -X POST http://localhost:8000/api/v1/ingest \
 
 ---
 
-## Running Tests
+## Production Hardening (Week 7)
 
-Tests use an in-memory SQLite database (no external Docker dependency required):
+### 1. Rate Limiting (`slowapi`)
+Rate limiting is enforced globally at **100 requests/minute** per authenticated user on all `/api/v1/*` routes.
+* **User Extraction**: Keys are bound to the JWT token's subject (`sub`/username) rather than client IP.
+* **Exemptions**: Health checks (`/health`, `/ready`) and internal telemetry ingestion (`/api/v1/ingest`) are exempted.
+* **Error Response**: Rejections return HTTP `429 Too Many Requests` with a JSON payload: `{"error": "Rate limit exceeded", "retry_after_seconds": X}` and a `Retry-After` header.
+
+### 2. Structured JSON Logging (`structlog`)
+All application logs are printed in JSON format to `stdout` for compatibility with modern log routers.
+* **Request Middleware**: Logs every processed request with method, path, HTTP status, duration (ms), and authenticated user.
+* **Ingestion Metrics**: Ingestion workflows log combined write and SoH calculation latency (`latency_ms`), battery ID, cycle, and source (`http`/`poller`).
+
+### 3. TimescaleDB Compression Policy
+TimescaleDB data compression is enabled on the `telemetry` table. Chunks are ordered by `recorded_at DESC` and segmented by `battery_id`.
+* An automated database compression policy compresses telemetry records older than **7 days**.
+
+### 4. JWT Key Rotation & Token Refresh
+* **Key Rotation**: Archive older RSA public keys under `previous_keys/`. The authentication module scans this folder to allow previously-signed tokens to validate successfully.
+* **Token Reissue**: Call `POST /auth/refresh` with a valid active access token to receive a re-signed token.
+* **Manual Rotation**: Run the rotation script:
+  ```bash
+  python scripts/rotate_keys.py
+  ```
+
+---
+
+## Verification & Load Testing (Week 8)
+
+### 1. Running Tests
+The Python unit/integration tests run against an in-memory SQLite database:
 ```bash
-# Navigate to the backend directory
 cd ev-battery-platform
-# Install dependencies
 pip install -r requirements.txt
-# Run Pytest
 python -m pytest tests/ -v
 ```
+
+### 2. Backup & Restore Validation
+Simulate PostgreSQL/TimescaleDB backup and restoration using `pg_dump`, execute TimescaleDB restore pre-hooks and post-hooks, and verify row count synchronization:
+```bash
+# On Linux/macOS
+./scripts/backup_restore_test.sh
+
+# On Windows (PowerShell)
+powershell -File ./scripts/backup_restore_test.ps1
+```
+
+### 3. Performance Benchmark (Load Testing)
+Simulate a concurrent load of **50 RPS for 60 seconds (3,000 total requests)** with a weighted, read-heavy API distribution (15% Ingest, 25% Telemetry, 20% SoH, 15% RUL, 15% Degradation, 10% Fleet Summary) to assert performance SLAs (p95 < 150ms, p99 < 300ms, 0% failure rate):
+```bash
+python scripts/perf_test.py
+```
+
