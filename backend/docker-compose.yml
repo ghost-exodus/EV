@@ -1,0 +1,35 @@
+services:
+  postgres:
+    image: timescale/timescaledb-ha:pg16
+    container_name: ev_postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-ev_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-ev_password}
+      POSTGRES_DB: ${POSTGRES_DB:-ev_telemetry}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/home/postgres/pgdata/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-ev_user} -d ${POSTGRES_DB:-ev_telemetry}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  fastapi:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ev_fastapi
+    env_file:
+      - .env
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  pgdata:
