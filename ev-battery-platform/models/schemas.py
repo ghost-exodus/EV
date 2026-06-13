@@ -111,6 +111,33 @@ class SoHResponse(BaseModel):
 
 
 # ---------------------------------------------------------------------------
+# GET /api/v1/fleet/summary
+# ---------------------------------------------------------------------------
+
+
+class FleetBatteryEntry(BaseModel):
+    battery_id: str
+    vehicle_id: str
+    current_soh_percent: Optional[float] = None
+    predicted_rul_cycles: Optional[int] = None
+    status: str  # "healthy", "warning", "critical", or "unknown"
+    last_seen: Optional[datetime] = None
+
+
+class StatusSummary(BaseModel):
+    healthy: int
+    warning: int
+    critical: int
+
+
+class FleetSummaryResponse(BaseModel):
+    total_batteries: int
+    status_summary: StatusSummary
+    fleet_avg_soh_percent: Optional[float] = None
+    batteries: list[FleetBatteryEntry]
+
+
+# ---------------------------------------------------------------------------
 # Error
 # ---------------------------------------------------------------------------
 

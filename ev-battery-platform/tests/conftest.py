@@ -69,8 +69,10 @@ def client(db_session):
     """
     FastAPI TestClient that:
     1. Overrides get_db to inject the test DB session.
-    2. Patches soh_service.SessionLocal so background tasks use the test DB.
+    2. Overrides verify_jwt to inject a mock authenticated admin user.
+    3. Patches soh_service.SessionLocal so background tasks use the test DB.
     """
+    from auth.dependencies import verify_jwt
 
     def _override_get_db():
         try:
@@ -78,7 +80,11 @@ def client(db_session):
         finally:
             pass
 
+    def _override_verify_jwt():
+        return {"username": "admin", "role": "fleet_admin"}
+
     app.dependency_overrides[get_db] = _override_get_db
+    app.dependency_overrides[verify_jwt] = _override_verify_jwt
 
     with patch("services.soh_service.SessionLocal", return_value=db_session):
         with TestClient(app) as c:

@@ -66,48 +66,27 @@ def _calculate_soh_with_session(battery_id: str, db: Session) -> None:
     current_capacity = float(latest_reading.capacity_mah)
     soh_percent = round((current_capacity / nominal) * 100, 2)
 
-    # ── Upsert into soh_snapshots ────────────────────────────────────────
-    # Use raw INSERT ... ON CONFLICT for Postgres (tests use SQLite fallback)
-    try:
-        stmt = pg_insert(SoHSnapshot).values(
+    # ── Upsert into soh_snapshots (database-agnostic select-then-update) ──
+    existing = (
+        db.query(SoHSnapshot)
+        .filter(
+            SoHSnapshot.battery_id == battery_id,
+            SoHSnapshot.cycle_number == latest_reading.cycle_number,
+        )
+        .first()
+    )
+    if existing:
+        existing.snapshot_at = latest_reading.recorded_at
+        existing.soh_percent = soh_percent
+        existing.capacity_mah = current_capacity
+    else:
+        snapshot = SoHSnapshot(
             battery_id=battery_id,
             snapshot_at=latest_reading.recorded_at,
             cycle_number=latest_reading.cycle_number,
             soh_percent=soh_percent,
             capacity_mah=current_capacity,
         )
-        stmt = stmt.on_conflict_do_update(
-            constraint="uq_battery_cycle",
-            set_={
-                "snapshot_at": stmt.excluded.snapshot_at,
-                "soh_percent": stmt.excluded.soh_percent,
-                "capacity_mah": stmt.excluded.capacity_mah,
-            },
-        )
-        db.execute(stmt)
-    except Exception:
-        # Fallback for SQLite (tests): try insert, update on conflict
-        db.rollback()
-        existing = (
-            db.query(SoHSnapshot)
-            .filter(
-                SoHSnapshot.battery_id == battery_id,
-                SoHSnapshot.cycle_number == latest_reading.cycle_number,
-            )
-            .first()
-        )
-        if existing:
-            existing.snapshot_at = latest_reading.recorded_at
-            existing.soh_percent = soh_percent
-            existing.capacity_mah = current_capacity
-        else:
-            snapshot = SoHSnapshot(
-                battery_id=battery_id,
-                snapshot_at=latest_reading.recorded_at,
-                cycle_number=latest_reading.cycle_number,
-                soh_percent=soh_percent,
-                capacity_mah=current_capacity,
-            )
-            db.add(snapshot)
+        db.add(snapshot)
 
     db.commit()

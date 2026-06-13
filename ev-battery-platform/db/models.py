@@ -99,10 +99,6 @@ class SoHSnapshot(Base):
     soh_percent = Column(Numeric(5, 2), nullable=False)
     capacity_mah = Column(Numeric(10, 2), nullable=False)
 
-    __table_args__ = (
-        UniqueConstraint("battery_id", "cycle_number", name="uq_battery_cycle"),
-    )
-
     # Relationships
     battery = relationship("Battery", back_populates="soh_snapshots")
 
