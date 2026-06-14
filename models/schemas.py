@@ -49,7 +49,7 @@ class Measurements(BaseModel):
     )
     internal_resistance_ohm: Optional[float] = Field(
         None, 
-        description="Internal resistance in ohms (accepted but not persisted)", 
+        description="Internal resistance in ohms (optional, persisted when provided)", 
         examples=[0.056]
     )
 
@@ -537,8 +537,13 @@ class RULResponse(BaseModel):
     )
     alert_level: str = Field(
         ..., 
-        description="Alert classification ('healthy', 'warning', or 'critical')", 
-        examples=["healthy"]
+        description="Alert classification ('none', 'warning', or 'critical')", 
+        examples=["none"]
+    )
+    message: Optional[str] = Field(
+        None,
+        description="Optional diagnostic/availability message",
+        examples=["No RUL prediction available yet — LSTM runs every 10th ingest"]
     )
 
 

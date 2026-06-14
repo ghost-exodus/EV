@@ -44,6 +44,9 @@ def calculate_soh(battery_id: str) -> None:
 def _calculate_soh_with_session(battery_id: str, db: Session) -> float | None:
     """Core logic — separated so tests can inject their own session."""
 
+    import logging
+    logger = logging.getLogger("soh_service")
+
     # ── Get nominal capacity ─────────────────────────────────────────────
     battery = db.query(Battery).filter(Battery.battery_id == battery_id).first()
     if battery is None:
@@ -61,42 +64,66 @@ def _calculate_soh_with_session(battery_id: str, db: Session) -> float | None:
         .first()
     )
     if latest_reading is None:
-        import logging
-        logger = logging.getLogger("soh_service")
         logger.info(f"Skipping SoH calc for {battery_id} — no telemetry records found")
         return None
 
     if latest_reading.capacity_mah is None:
-        import logging
-        logger = logging.getLogger("soh_service")
         logger.info(f"Skipping SoH calc for {battery_id} — no capacity_mah yet")
         return None
 
     current_capacity = float(latest_reading.capacity_mah)
     soh_percent = round((current_capacity / nominal) * 100, 2)
 
-    # ── Upsert into soh_snapshots (database-agnostic select-then-update) ──
-    existing = (
-        db.query(SoHSnapshot)
-        .filter(
-            SoHSnapshot.battery_id == battery_id,
-            SoHSnapshot.cycle_number == latest_reading.cycle_number,
-        )
-        .first()
-    )
-    if existing:
-        existing.snapshot_at = latest_reading.recorded_at
-        existing.soh_percent = soh_percent
-        existing.capacity_mah = current_capacity
-    else:
-        snapshot = SoHSnapshot(
+    # ── Upsert into soh_snapshots ────────────────────────────────────────
+    # Use PostgreSQL ON CONFLICT DO UPDATE to eliminate the TOCTOU race
+    # condition that occurred with the old select-then-insert pattern under
+    # concurrent ingestion for the same (battery_id, cycle_number).
+    try:
+        dialect = db.bind.dialect.name if db.bind else "unknown"
+    except Exception:
+        dialect = "unknown"
+
+    if dialect == "postgresql":
+        # Atomic upsert — safe under concurrent writes
+        stmt = pg_insert(SoHSnapshot).values(
             battery_id=battery_id,
             snapshot_at=latest_reading.recorded_at,
             cycle_number=latest_reading.cycle_number,
             soh_percent=soh_percent,
             capacity_mah=current_capacity,
+        ).on_conflict_do_update(
+            constraint="uq_soh_battery_cycle",
+            set_={
+                "snapshot_at": latest_reading.recorded_at,
+                "soh_percent": soh_percent,
+                "capacity_mah": current_capacity,
+            },
         )
-        db.add(snapshot)
+        db.execute(stmt)
+    else:
+        # SQLite fallback for unit tests (no ON CONFLICT support via pg_insert)
+        from sqlalchemy.exc import IntegrityError
+        existing = (
+            db.query(SoHSnapshot)
+            .filter(
+                SoHSnapshot.battery_id == battery_id,
+                SoHSnapshot.cycle_number == latest_reading.cycle_number,
+            )
+            .first()
+        )
+        if existing:
+            existing.snapshot_at = latest_reading.recorded_at
+            existing.soh_percent = soh_percent
+            existing.capacity_mah = current_capacity
+        else:
+            snapshot = SoHSnapshot(
+                battery_id=battery_id,
+                snapshot_at=latest_reading.recorded_at,
+                cycle_number=latest_reading.cycle_number,
+                soh_percent=soh_percent,
+                capacity_mah=current_capacity,
+            )
+            db.add(snapshot)
 
     db.commit()
     return soh_percent

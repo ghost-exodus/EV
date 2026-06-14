@@ -138,7 +138,7 @@ def get_fleet_summary(db: Session = Depends(get_db)):
         battery_entries.append(
             FleetBatteryEntry(
                 battery_id=r.battery_id,
-                vehicle_id=r.vehicle_id,
+                vehicle_id=r.vehicle_id or "UNKNOWN",
                 current_soh_percent=soh_pct,
                 predicted_rul_cycles=r.predicted_rul_cycles,
                 status=status,

@@ -2,7 +2,7 @@
 FastAPI dependencies for JWT authentication and role-based access control (RBAC).
 """
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from auth.jwt_handler import decode_token
 
@@ -10,12 +10,20 @@ from auth.jwt_handler import decode_token
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token")
 
 
-def verify_jwt(token: str = Depends(oauth2_scheme)) -> dict:
+def verify_jwt(request: Request, token: str = Depends(oauth2_scheme)) -> dict:
     """
     Dependency to verify the incoming JWT and extract the user subject and role.
     Raises 401 HTTPException if verification fails.
+
+    Reuses the decoded payload from request.state.jwt_payload if the rate
+    limiter already decoded the token on this request (avoids redundant
+    RSA signature verification).
     """
-    payload = decode_token(token)
+    # Reuse cached decode from rate limiter if available
+    payload = getattr(request.state, "jwt_payload", None)
+    if payload is None:
+        payload = decode_token(token)
+
     username = payload.get("sub")
     role = payload.get("role")
 
@@ -45,3 +53,4 @@ def require_role(*allowed_roles: str):
         return current_user
 
     return dependency
+

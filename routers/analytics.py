@@ -1,5 +1,10 @@
 """
 GET /api/v1/analytics/degradation — Battery health degradation analytics.
+
+All date truncation is performed in UTC to ensure deterministic day boundaries
+regardless of the PostgreSQL server's timezone setting. If the frontend sends
+start_date/end_date based on the user's local time, results may shift by ±1 day
+near midnight UTC. Future: accept an X-Timezone header for client-aware queries.
 """
 
 from datetime import date
@@ -22,13 +27,13 @@ router = APIRouter()
 )
 def get_degradation(
     battery_id: str = Query(..., description="Battery ID to query"),
-    start_date: date | None = Query(None, description="Start date (YYYY-MM-DD)"),
-    end_date: date | None = Query(None, description="End date (YYYY-MM-DD)"),
+    start_date: date | None = Query(None, description="Start date (YYYY-MM-DD, interpreted as UTC)"),
+    end_date: date | None = Query(None, description="End date (YYYY-MM-DD, interpreted as UTC)"),
     db: Session = Depends(get_db),
 ):
     """
     Return daily average and minimum State of Health (SoH) for a battery.
-    Supports filtering by date range.
+    Supports filtering by date range. All dates are in UTC.
     """
     # 1. Verify battery registry entry exists
     battery = db.query(Battery).filter(Battery.battery_id == battery_id).first()
@@ -39,7 +44,18 @@ def get_degradation(
         )
 
     # 2. Query snapshots grouped by day
-    day_col = func.date(SoHSnapshot.snapshot_at).label("day")
+    # PostgreSQL: explicit UTC cast for deterministic day boundaries
+    # SQLite (tests): func.date() works directly on ISO text timestamps
+    try:
+        dialect = db.bind.dialect.name if db.bind else "unknown"
+    except Exception:
+        dialect = "unknown"
+
+    if dialect == "postgresql":
+        day_col = func.date(func.timezone('UTC', SoHSnapshot.snapshot_at)).label("day")
+    else:
+        day_col = func.date(SoHSnapshot.snapshot_at).label("day")
+
     query = (
         db.query(
             day_col,
@@ -49,11 +65,17 @@ def get_degradation(
         .filter(SoHSnapshot.battery_id == battery_id)
     )
 
-    # Database-side date casting for safe timezone comparison
+    # Date filters also use UTC-cast dates for consistency
     if start_date:
-        query = query.filter(func.date(SoHSnapshot.snapshot_at) >= start_date)
+        if dialect == "postgresql":
+            query = query.filter(func.date(func.timezone('UTC', SoHSnapshot.snapshot_at)) >= start_date)
+        else:
+            query = query.filter(func.date(SoHSnapshot.snapshot_at) >= start_date)
     if end_date:
-        query = query.filter(func.date(SoHSnapshot.snapshot_at) <= end_date)
+        if dialect == "postgresql":
+            query = query.filter(func.date(func.timezone('UTC', SoHSnapshot.snapshot_at)) <= end_date)
+        else:
+            query = query.filter(func.date(SoHSnapshot.snapshot_at) <= end_date)
 
 
     query = query.group_by(day_col).order_by("day")
@@ -71,3 +93,4 @@ def get_degradation(
     ]
 
     return DegradationResponse(battery_id=battery_id, data=data)
+

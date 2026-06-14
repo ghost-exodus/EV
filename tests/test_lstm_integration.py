@@ -17,7 +17,7 @@ def test_lstm_inference_trigger_on_10th_message(client, db_session):
     """
     with patch("services.ingest_service.predict_rul") as mock_predict, patch.dict(
         os.environ, {"INTERNAL_API_KEY": "test_secret_key"}
-    ):
+    ), patch("services.ingest_service.MIN_SEQUENCE_LENGTH", 10):
         mock_predict.return_value = {
             "predicted_rul_cycles": 213,
             "confidence_lower": 188,

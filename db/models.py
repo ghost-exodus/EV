@@ -85,6 +85,9 @@ class Telemetry(Base):
 
 class SoHSnapshot(Base):
     __tablename__ = "soh_snapshots"
+    __table_args__ = (
+        UniqueConstraint("battery_id", "cycle_number", name="uq_soh_battery_cycle"),
+    )
 
     id = Column(
         BigInteger().with_variant(Integer, "sqlite"),
