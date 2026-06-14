@@ -84,15 +84,28 @@ app.add_middleware(SlowAPIMiddleware)
 async def request_logging_middleware(request: Request, call_next):
     start_time = time.perf_counter()
     user = None
+    token_status = "none"  # none | invalid | valid
+
     auth_header = request.headers.get("Authorization")
     if auth_header and auth_header.startswith("Bearer "):
-        token = auth_header.split(" ")[1]
-        try:
-            from auth.jwt_handler import decode_token
-            payload = decode_token(token)
-            user = payload.get("sub")
-        except Exception:
-            pass
+        token_status = "invalid"
+        # Try to reuse JWT payload cached by the rate limiter (avoids
+        # redundant RSA decode — see auth/limiter.py get_jwt_subject)
+        cached = getattr(request.state, "jwt_payload", None)
+        if cached:
+            user = cached.get("sub")
+            token_status = "valid"
+        else:
+            # Fallback decode for routes that bypass the rate limiter
+            token = auth_header.split(" ")[1]
+            try:
+                from auth.jwt_handler import decode_token
+                payload = decode_token(token)
+                request.state.jwt_payload = payload
+                user = payload.get("sub")
+                token_status = "valid"
+            except Exception:
+                pass  # token_status stays "invalid"
 
     response = await call_next(request)
     duration_ms = (time.perf_counter() - start_time) * 1000.0
@@ -104,6 +117,7 @@ async def request_logging_middleware(request: Request, call_next):
         status_code=response.status_code,
         duration_ms=round(duration_ms, 2),
         user=user,
+        token_status=token_status,
     )
     return response
 
