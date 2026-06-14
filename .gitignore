@@ -1,0 +1,29 @@
+# Python bytecode and compilation caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.ipynb_checkpoints/
+
+# Virtual Environments (Local to your Mac)
+.vatavaran/
+.venv/
+venv/
+env/
+
+# Dataset files (Keep your master code repo lightweight)
+ml/data/data/
+ml/data/*.csv
+ml/data/*.mat
+
+# macOS system files
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Secrets and local configurations
+*.env
+*.env.local
+.env.development.local
+.env.test.local
+.env.production.local
