@@ -1,0 +1,1598 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "EV Battery Telemetry & Diagnostics",
+    "description": "Ingest, query, and analyse EV battery telemetry data.",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/auth/token": {
+      "post": {
+        "tags": [
+          "Authentication"
+        ],
+        "summary": "Obtain a JWT access token",
+        "description": "Authenticate with username and password to get a bearer token.",
+        "operationId": "login_auth_token_post",
+        "requestBody": {
+          "content": {
+            "application/x-www-form-urlencoded": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_login_auth_token_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/auth/refresh": {
+      "post": {
+        "tags": [
+          "Authentication"
+        ],
+        "summary": "Refresh an active access token",
+        "description": "Accepts a valid, unexpired access token and returns a new token with fresh expiry.",
+        "operationId": "refresh_token_auth_refresh_post",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/api/v1/ingest": {
+      "post": {
+        "tags": [
+          "Ingest"
+        ],
+        "summary": "Ingest a single telemetry reading (internal only)",
+        "description": "Validate and persist a telemetry reading via HTTP.\nRequires the 'X-Internal-API-Key' header.",
+        "operationId": "ingest_telemetry_api_v1_ingest_post",
+        "parameters": [
+          {
+            "name": "X-Internal-API-Key",
+            "in": "header",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "title": "X-Internal-Api-Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IngestPayload"
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IngestResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Forbidden"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/telemetry/{battery_id}": {
+      "get": {
+        "tags": [
+          "Telemetry"
+        ],
+        "summary": "Query telemetry readings for a battery",
+        "description": "Return telemetry readings with cursor-based pagination.\n\n- `limit`: number of records per page (max 1000)\n- `cursor`: base64-encoded cursor from a previous response",
+        "operationId": "get_telemetry_api_v1_telemetry__battery_id__get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "battery_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Battery Id"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 1000,
+              "minimum": 1,
+              "default": 100,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Cursor"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TelemetryResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/soh/{battery_id}": {
+      "get": {
+        "tags": [
+          "State of Health"
+        ],
+        "summary": "Get State-of-Health for a battery",
+        "description": "Return the current SoH, status classification, and trend over\nthe last 10 charge/discharge cycles.",
+        "operationId": "get_soh_api_v1_soh__battery_id__get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "battery_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Battery Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SoHResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/rul/{battery_id}": {
+      "get": {
+        "tags": [
+          "RUL Predictions"
+        ],
+        "summary": "Get latest RUL prediction details for a battery",
+        "description": "Return the latest computed RUL prediction, confidence interval, and alert classification.\nAvailable to authenticated fleet_admin and operator users.",
+        "operationId": "get_rul_api_v1_rul__battery_id__get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "battery_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Battery Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RULResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/analytics/degradation": {
+      "get": {
+        "tags": [
+          "Analytics"
+        ],
+        "summary": "Get daily battery health degradation metrics",
+        "description": "Return daily average and minimum State of Health (SoH) for a battery.\nSupports filtering by date range.",
+        "operationId": "get_degradation_api_v1_analytics_degradation_get",
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "battery_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Battery ID to query",
+              "title": "Battery Id"
+            },
+            "description": "Battery ID to query"
+          },
+          {
+            "name": "start_date",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Start date (YYYY-MM-DD)",
+              "title": "Start Date"
+            },
+            "description": "Start date (YYYY-MM-DD)"
+          },
+          {
+            "name": "end_date",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "date"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "End date (YYYY-MM-DD)",
+              "title": "End Date"
+            },
+            "description": "End date (YYYY-MM-DD)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DegradationResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/fleet/summary": {
+      "get": {
+        "tags": [
+          "Fleet"
+        ],
+        "summary": "Get fleet battery diagnostic status summary",
+        "description": "Query diagnostics summary across all batteries.\nAvailable to fleet_admin only.",
+        "operationId": "get_fleet_summary_api_v1_fleet_summary_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FleetSummaryResponse"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "OAuth2PasswordBearer": []
+          }
+        ]
+      }
+    },
+    "/health": {
+      "get": {
+        "tags": [
+          "Health"
+        ],
+        "summary": "Health Check",
+        "description": "Simple liveness probe.",
+        "operationId": "health_check_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/ready": {
+      "get": {
+        "tags": [
+          "Health"
+        ],
+        "summary": "Ready Check",
+        "description": "Readiness probe that checks database connectivity and SQS queue status.",
+        "operationId": "ready_check_ready_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Body_login_auth_token_post": {
+        "properties": {
+          "grant_type": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^password$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Grant Type"
+          },
+          "username": {
+            "type": "string",
+            "title": "Username"
+          },
+          "password": {
+            "type": "string",
+            "format": "password",
+            "title": "Password"
+          },
+          "scope": {
+            "type": "string",
+            "title": "Scope",
+            "default": ""
+          },
+          "client_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Client Id"
+          },
+          "client_secret": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "format": "password",
+            "title": "Client Secret"
+          }
+        },
+        "type": "object",
+        "required": [
+          "username",
+          "password"
+        ],
+        "title": "Body_login_auth_token_post"
+      },
+      "ConfidenceInterval": {
+        "properties": {
+          "lower_bound": {
+            "type": "integer",
+            "title": "Lower Bound",
+            "description": "Lower interval bound of RUL prediction",
+            "examples": [
+              188
+            ]
+          },
+          "upper_bound": {
+            "type": "integer",
+            "title": "Upper Bound",
+            "description": "Upper interval bound of RUL prediction",
+            "examples": [
+              238
+            ]
+          },
+          "confidence_percent": {
+            "type": "number",
+            "title": "Confidence Percent",
+            "description": "Statistical confidence level percent",
+            "default": 90.0,
+            "examples": [
+              90.0
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "lower_bound",
+          "upper_bound"
+        ],
+        "title": "ConfidenceInterval"
+      },
+      "DegradationEntry": {
+        "properties": {
+          "date": {
+            "type": "string",
+            "title": "Date",
+            "description": "Calendar date of health state",
+            "examples": [
+              "2026-06-13"
+            ]
+          },
+          "avg_soh_percent": {
+            "type": "number",
+            "title": "Avg Soh Percent",
+            "description": "Average SOH on this date",
+            "examples": [
+              83.71
+            ]
+          },
+          "min_soh_percent": {
+            "type": "number",
+            "title": "Min Soh Percent",
+            "description": "Lowest single SOH snapshot on this date",
+            "examples": [
+              83.71
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "date",
+          "avg_soh_percent",
+          "min_soh_percent"
+        ],
+        "title": "DegradationEntry"
+      },
+      "DegradationResponse": {
+        "properties": {
+          "battery_id": {
+            "type": "string",
+            "title": "Battery Id",
+            "description": "Battery ID queried",
+            "examples": [
+              "B0047"
+            ]
+          },
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/DegradationEntry"
+            },
+            "type": "array",
+            "title": "Data",
+            "description": "Daily history entries of SOH degradation"
+          }
+        },
+        "type": "object",
+        "required": [
+          "battery_id",
+          "data"
+        ],
+        "title": "DegradationResponse"
+      },
+      "ErrorResponse": {
+        "properties": {
+          "error": {
+            "type": "string",
+            "title": "Error",
+            "description": "Error description message",
+            "examples": [
+              "Rate limit exceeded"
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "error"
+        ],
+        "title": "ErrorResponse"
+      },
+      "FleetBatteryEntry": {
+        "properties": {
+          "battery_id": {
+            "type": "string",
+            "title": "Battery Id",
+            "description": "Unique battery identifier",
+            "examples": [
+              "B0047"
+            ]
+          },
+          "vehicle_id": {
+            "type": "string",
+            "title": "Vehicle Id",
+            "description": "Associated vehicle identification string",
+            "examples": [
+              "VH_TESLA_042"
+            ]
+          },
+          "current_soh_percent": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Soh Percent",
+            "description": "Current SOH percentage",
+            "examples": [
+              83.71
+            ]
+          },
+          "predicted_rul_cycles": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Predicted Rul Cycles",
+            "description": "Predicted remaining useful life cycles before failure",
+            "examples": [
+              213
+            ]
+          },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "description": "Health status: 'healthy', 'warning', 'critical', or 'unknown'",
+            "examples": [
+              "healthy"
+            ]
+          },
+          "last_seen": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Seen",
+            "description": "Timestamp of the last telemetry packet",
+            "examples": [
+              "2026-06-13T17:03:00Z"
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "battery_id",
+          "vehicle_id",
+          "status"
+        ],
+        "title": "FleetBatteryEntry"
+      },
+      "FleetSummaryResponse": {
+        "properties": {
+          "total_batteries": {
+            "type": "integer",
+            "title": "Total Batteries",
+            "description": "Total batteries managed in fleet",
+            "examples": [
+              19
+            ]
+          },
+          "status_summary": {
+            "$ref": "#/components/schemas/StatusSummary"
+          },
+          "fleet_avg_soh_percent": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fleet Avg Soh Percent",
+            "description": "Average State of Health across the active fleet",
+            "examples": [
+              81.45
+            ]
+          },
+          "batteries": {
+            "items": {
+              "$ref": "#/components/schemas/FleetBatteryEntry"
+            },
+            "type": "array",
+            "title": "Batteries",
+            "description": "Details of all batteries in the fleet"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total_batteries",
+          "status_summary",
+          "batteries"
+        ],
+        "title": "FleetSummaryResponse"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "IngestPayload": {
+        "properties": {
+          "schema_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Schema Version",
+            "description": "Data contract version",
+            "examples": [
+              "1.0"
+            ]
+          },
+          "source": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source",
+            "description": "Data source identifier (e.g. simulator/operator)",
+            "examples": [
+              "ev_simulator_aws"
+            ]
+          },
+          "battery_id": {
+            "type": "string",
+            "maxLength": 32,
+            "title": "Battery Id",
+            "description": "Unique identifier for the battery pack",
+            "examples": [
+              "B0047"
+            ]
+          },
+          "vehicle_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Vehicle Id",
+            "description": "Associated vehicle ID",
+            "examples": [
+              "VH_TESLA_042"
+            ]
+          },
+          "timestamp": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Timestamp",
+            "description": "Measurement timestamp in ISO 8601 format",
+            "examples": [
+              "2026-06-13T17:03:00Z"
+            ]
+          },
+          "cycle_number": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Cycle Number",
+            "description": "The battery test cycle index",
+            "examples": [
+              47
+            ]
+          },
+          "cycle_type": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 16
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cycle Type",
+            "description": "Operation type: 'charge' or 'discharge'",
+            "default": "unknown",
+            "examples": [
+              "discharge"
+            ]
+          },
+          "measurements": {
+            "$ref": "#/components/schemas/Measurements"
+          },
+          "metadata": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Metadata"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "battery_id",
+          "timestamp",
+          "cycle_number",
+          "measurements"
+        ],
+        "title": "IngestPayload",
+        "examples": [
+          {
+            "battery_id": "EV_B0005_001",
+            "cycle_number": 147,
+            "cycle_type": "discharge",
+            "measurements": {
+              "capacity_mah": 1823.4,
+              "current_a": -1.9987,
+              "internal_resistance_ohm": 0.0214,
+              "temperature_c": 24.5,
+              "voltage_v": 3.8124
+            },
+            "metadata": {
+              "replay_speed": 1.0,
+              "simulator_version": "1.0.0",
+              "source_file": "B0005.csv"
+            },
+            "schema_version": "1.0",
+            "source": "ev_simulator_local",
+            "timestamp": "2024-01-15T14:23:45.123Z",
+            "vehicle_id": "VH_TESLA_042"
+          },
+          {
+            "battery_id": "EV_B0005_001",
+            "cycle_number": 147,
+            "cycle_type": "discharge",
+            "measurements": {
+              "capacity_mah": 1823.4,
+              "current_a": -1.9987,
+              "temperature_c": 24.5,
+              "voltage_v": 3.8124
+            },
+            "timestamp": "2024-01-15T14:23:45.123Z"
+          }
+        ]
+      },
+      "IngestResponse": {
+        "properties": {
+          "ingested": {
+            "type": "boolean",
+            "title": "Ingested",
+            "description": "Indicates whether telemetry ingestion was successful",
+            "examples": [
+              true
+            ]
+          },
+          "battery_id": {
+            "type": "string",
+            "title": "Battery Id",
+            "description": "The battery ID associated with the ingested data",
+            "examples": [
+              "B0047"
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "ingested",
+          "battery_id"
+        ],
+        "title": "IngestResponse"
+      },
+      "Measurements": {
+        "properties": {
+          "voltage_v": {
+            "type": "number",
+            "title": "Voltage V",
+            "description": "Battery voltage in volts",
+            "examples": [
+              3.8124
+            ]
+          },
+          "current_a": {
+            "type": "number",
+            "title": "Current A",
+            "description": "Current in amps (negative indicates discharge, positive indicates charge)",
+            "examples": [
+              -1.9987
+            ]
+          },
+          "temperature_c": {
+            "type": "number",
+            "title": "Temperature C",
+            "description": "Temperature in Celsius",
+            "examples": [
+              24.5
+            ]
+          },
+          "capacity_mah": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Capacity Mah",
+            "description": "Measured/remaining capacity in mAh",
+            "examples": [
+              1823.4
+            ]
+          },
+          "internal_resistance_ohm": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Internal Resistance Ohm",
+            "description": "Internal resistance in ohms (accepted but not persisted)",
+            "examples": [
+              0.056
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "voltage_v",
+          "current_a",
+          "temperature_c"
+        ],
+        "title": "Measurements"
+      },
+      "Metadata": {
+        "properties": {
+          "simulator_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Simulator Version",
+            "description": "Version of the simulator generating metrics",
+            "examples": [
+              "1.2.0"
+            ]
+          },
+          "replay_speed": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Replay Speed",
+            "description": "Speed factor of playback replay",
+            "examples": [
+              1.0
+            ]
+          },
+          "source_file": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Source File",
+            "description": "Original source file name",
+            "examples": [
+              "00001.csv"
+            ]
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "title": "Metadata",
+        "description": "Flexible metadata block \u2014 accepts any extra keys."
+      },
+      "RULResponse": {
+        "properties": {
+          "battery_id": {
+            "type": "string",
+            "title": "Battery Id",
+            "description": "Battery pack ID",
+            "examples": [
+              "B0047"
+            ]
+          },
+          "predicted_rul_cycles": {
+            "type": "integer",
+            "title": "Predicted Rul Cycles",
+            "description": "LSTM predicted remaining cycles before EOL threshold is hit",
+            "examples": [
+              213
+            ]
+          },
+          "confidence_interval": {
+            "$ref": "#/components/schemas/ConfidenceInterval"
+          },
+          "current_soh_percent": {
+            "type": "number",
+            "title": "Current Soh Percent",
+            "description": "SOH percentage used for this prediction",
+            "examples": [
+              83.71
+            ]
+          },
+          "eol_threshold_soh": {
+            "type": "number",
+            "title": "Eol Threshold Soh",
+            "description": "SOH target threshold representing End Of Life",
+            "default": 70.0,
+            "examples": [
+              70.0
+            ]
+          },
+          "model_version": {
+            "type": "string",
+            "title": "Model Version",
+            "description": "Model definition version code",
+            "examples": [
+              "v2.0"
+            ]
+          },
+          "predicted_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Predicted At",
+            "description": "Timestamp of prediction generation",
+            "examples": [
+              "2026-06-13T17:03:00Z"
+            ]
+          },
+          "alert_level": {
+            "type": "string",
+            "title": "Alert Level",
+            "description": "Alert classification ('healthy', 'warning', or 'critical')",
+            "examples": [
+              "healthy"
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "battery_id",
+          "predicted_rul_cycles",
+          "confidence_interval",
+          "current_soh_percent",
+          "model_version",
+          "predicted_at",
+          "alert_level"
+        ],
+        "title": "RULResponse"
+      },
+      "SoHResponse": {
+        "properties": {
+          "battery_id": {
+            "type": "string",
+            "title": "Battery Id",
+            "description": "Battery identifier",
+            "examples": [
+              "B0047"
+            ]
+          },
+          "current_soh_percent": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Soh Percent",
+            "description": "Latest calculated SOH percent",
+            "examples": [
+              83.71
+            ]
+          },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "description": "Health status label ('healthy', 'warning', or 'critical')",
+            "examples": [
+              "healthy"
+            ]
+          },
+          "nominal_capacity_mah": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nominal Capacity Mah",
+            "description": "Battery rated capacity in mAh",
+            "examples": [
+              2000.0
+            ]
+          },
+          "current_capacity_mah": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Current Capacity Mah",
+            "description": "Latest measured capacity in mAh",
+            "examples": [
+              1674.3
+            ]
+          },
+          "last_calculated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Calculated At",
+            "description": "Timestamp of the calculation",
+            "examples": [
+              "2026-06-13T17:03:00Z"
+            ]
+          },
+          "trend": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SoHTrend"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message",
+            "description": "Optional diagnostic/availability message",
+            "examples": [
+              "No SoH data available yet \u2014 capacity_mah not received"
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "battery_id",
+          "status"
+        ],
+        "title": "SoHResponse"
+      },
+      "SoHTrend": {
+        "properties": {
+          "direction": {
+            "type": "string",
+            "title": "Direction",
+            "description": "SOH direction metric ('degrading', 'stable', or 'improving')",
+            "examples": [
+              "degrading"
+            ]
+          },
+          "delta_last_10_cycles": {
+            "type": "number",
+            "title": "Delta Last 10 Cycles",
+            "description": "Delta change in SOH over the last 10 cycles",
+            "examples": [
+              -1.25
+            ]
+          },
+          "history": {
+            "items": {
+              "$ref": "#/components/schemas/SoHTrendEntry"
+            },
+            "type": "array",
+            "title": "History",
+            "description": "Historical SOH points"
+          }
+        },
+        "type": "object",
+        "required": [
+          "direction",
+          "delta_last_10_cycles",
+          "history"
+        ],
+        "title": "SoHTrend"
+      },
+      "SoHTrendEntry": {
+        "properties": {
+          "cycle": {
+            "type": "integer",
+            "title": "Cycle",
+            "description": "Cycle number",
+            "examples": [
+              1
+            ]
+          },
+          "soh_percent": {
+            "type": "number",
+            "title": "Soh Percent",
+            "description": "State of Health (SOH) calculated percent",
+            "examples": [
+              83.71
+            ]
+          },
+          "snapshot_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Snapshot At",
+            "description": "Timestamp of the calculation snapshot",
+            "examples": [
+              "2026-06-13T17:03:00Z"
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "cycle",
+          "soh_percent",
+          "snapshot_at"
+        ],
+        "title": "SoHTrendEntry"
+      },
+      "StatusSummary": {
+        "properties": {
+          "healthy": {
+            "type": "integer",
+            "title": "Healthy",
+            "description": "Count of healthy batteries in fleet",
+            "examples": [
+              15
+            ]
+          },
+          "warning": {
+            "type": "integer",
+            "title": "Warning",
+            "description": "Count of warning batteries in fleet",
+            "examples": [
+              3
+            ]
+          },
+          "critical": {
+            "type": "integer",
+            "title": "Critical",
+            "description": "Count of critical batteries in fleet",
+            "examples": [
+              1
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "healthy",
+          "warning",
+          "critical"
+        ],
+        "title": "StatusSummary"
+      },
+      "TelemetryReading": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id",
+            "description": "Unique database entry ID",
+            "examples": [
+              23591
+            ]
+          },
+          "recorded_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Recorded At",
+            "description": "Timestamp of the measurement",
+            "examples": [
+              "2026-06-13T17:03:00Z"
+            ]
+          },
+          "cycle_number": {
+            "type": "integer",
+            "title": "Cycle Number",
+            "description": "Cycle number during measurement",
+            "examples": [
+              47
+            ]
+          },
+          "cycle_type": {
+            "type": "string",
+            "title": "Cycle Type",
+            "description": "Cycle type ('charge' or 'discharge')",
+            "examples": [
+              "discharge"
+            ]
+          },
+          "voltage_v": {
+            "type": "number",
+            "title": "Voltage V",
+            "description": "Voltage reading (V)",
+            "examples": [
+              3.8124
+            ]
+          },
+          "current_a": {
+            "type": "number",
+            "title": "Current A",
+            "description": "Current reading (A)",
+            "examples": [
+              -1.9987
+            ]
+          },
+          "temperature_c": {
+            "type": "number",
+            "title": "Temperature C",
+            "description": "Temperature reading (\u00b0C)",
+            "examples": [
+              24.5
+            ]
+          },
+          "capacity_mah": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Capacity Mah",
+            "description": "Capacity calculation associated (mAh)",
+            "examples": [
+              1823.4
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "recorded_at",
+          "cycle_number",
+          "cycle_type",
+          "voltage_v",
+          "current_a",
+          "temperature_c"
+        ],
+        "title": "TelemetryReading"
+      },
+      "TelemetryResponse": {
+        "properties": {
+          "battery_id": {
+            "type": "string",
+            "title": "Battery Id",
+            "description": "Battery ID queried",
+            "examples": [
+              "B0047"
+            ]
+          },
+          "total_records": {
+            "type": "integer",
+            "title": "Total Records",
+            "description": "Total matching records found",
+            "examples": [
+              250
+            ]
+          },
+          "cursor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cursor",
+            "description": "Pagination cursor for the next batch of readings",
+            "examples": [
+              "1718293910.123"
+            ]
+          },
+          "has_more": {
+            "type": "boolean",
+            "title": "Has More",
+            "description": "Indicates whether more historical pages exist",
+            "examples": [
+              false
+            ]
+          },
+          "readings": {
+            "items": {
+              "$ref": "#/components/schemas/TelemetryReading"
+            },
+            "type": "array",
+            "title": "Readings",
+            "description": "List of telemetry data points"
+          }
+        },
+        "type": "object",
+        "required": [
+          "battery_id",
+          "total_records",
+          "has_more",
+          "readings"
+        ],
+        "title": "TelemetryResponse"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    },
+    "securitySchemes": {
+      "OAuth2PasswordBearer": {
+        "type": "oauth2",
+        "flows": {
+          "password": {
+            "scopes": {},
+            "tokenUrl": "/auth/token"
+          }
+        }
+      }
+    }
+  }
+}
