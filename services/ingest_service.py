@@ -4,8 +4,8 @@ SoH calculation, and LSTM model prediction execution.
 """
 
 import logging
+from collections import defaultdict
 import threading
-from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 import time
@@ -18,56 +18,11 @@ from services.ml_service import predict_rul
 logger = logging.getLogger("ingest_service")
 ingest_logger = structlog.get_logger().bind(logger="ingest")
 
+# Thread-safe in-memory message counter (resets on app restart)
+in_memory_counter = defaultdict(int)
+counter_lock = threading.Lock()
+
 DEFAULT_NOMINAL_CAPACITY_MAH = 2000.0
-
-# ── LSTM concurrency control ────────────────────────────────────────────────
-# Semaphore limits how many LSTM background tasks can run simultaneously.
-# This prevents a "thundering herd" of DB sessions if multiple batteries
-# hit their trigger threshold at the same time (e.g. after a container restart).
-_lstm_semaphore = threading.Semaphore(3)
-
-# Minimum number of telemetry readings required before LSTM can run.
-# The real LSTM model expects sequence length 50; running on shorter sequences
-# produces unreliable predictions or outright model errors.
-MIN_SEQUENCE_LENGTH = 50
-
-# ── Counter design note ─────────────────────────────────────────────────────
-# The LSTM trigger uses a DB COUNT query (not an in-memory counter) to decide
-# when to fire.  This survives container restarts and naturally staggers
-# triggers across batteries.
-#
-# KNOWN LIMITATION (single-worker only): Under multiple uvicorn/gunicorn
-# workers, concurrent ingests could see stale counts between the telemetry
-# INSERT and the COUNT query. For true multi-worker correctness, replace this
-# with Redis INCR or a database sequence. This is acceptable for the current
-# single-worker Docker deployment (Phase 1/2). Redis integration is planned
-# for Phase 3 if horizontal scaling is needed.
-
-
-def _run_lstm_with_guard(battery_id: str) -> None:
-    """
-    Wrapper around run_lstm_prediction_task that acquires the concurrency
-    semaphore and catches any exception at the outermost level — including
-    failures in SessionLocal() construction or semaphore acquisition.
-
-    This ensures fire-and-forget executor calls never silently swallow errors.
-    """
-    acquired = _lstm_semaphore.acquire(timeout=30)
-    if not acquired:
-        logger.warning(
-            f"LSTM semaphore timeout for {battery_id} — too many concurrent tasks, skipping."
-        )
-        return
-    try:
-        run_lstm_prediction_task(battery_id)
-    except Exception as e:
-        # This outer catch handles anything that escapes the inner try/except
-        # in run_lstm_prediction_task (e.g., SessionLocal() failing to connect).
-        logger.error(
-            f"Unhandled error in LSTM wrapper for {battery_id}: {e}", exc_info=True
-        )
-    finally:
-        _lstm_semaphore.release()
 
 
 def run_lstm_prediction_task(battery_id: str) -> None:
@@ -84,19 +39,11 @@ def run_lstm_prediction_task(battery_id: str) -> None:
             db.query(Telemetry)
             .filter(Telemetry.battery_id == battery_id)
             .order_by(Telemetry.recorded_at.desc())
-            .limit(MIN_SEQUENCE_LENGTH)
+            .limit(50)
             .all()
         )
         if not readings_desc:
             logger.warning(f"No telemetry readings found for {battery_id} during LSTM run.")
-            return
-
-        # Guard: skip LSTM if we don't have enough data for a reliable prediction
-        if len(readings_desc) < MIN_SEQUENCE_LENGTH:
-            logger.info(
-                f"Skipping LSTM for {battery_id} — only {len(readings_desc)} "
-                f"readings (need {MIN_SEQUENCE_LENGTH})"
-            )
             return
 
         recent_readings = [
@@ -121,8 +68,8 @@ def run_lstm_prediction_task(battery_id: str) -> None:
         )
         soh_val = float(latest_soh.soh_percent) if latest_soh else None
 
-        # 3. Call predictive model
-        prediction_res = predict_rul(battery_id, recent_readings)
+        # 3. Call predictive model (pass soh_percent as the 5th feature the LSTM expects)
+        prediction_res = predict_rul(battery_id, recent_readings, soh_percent=soh_val)
 
         # 4. Insert into the database
         pred_row = RULPrediction(
@@ -183,26 +130,24 @@ def ingest_telemetry_shared(payload, db: Session, background_tasks=None, source:
     except Exception as e:
         logger.error(f"Error in synchronous calculate_soh for {payload.battery_id}: {e}")
 
-    # 4. Use DB COUNT to decide LSTM trigger (survives restarts, works across workers)
-    current_count = (
-        db.query(func.count(Telemetry.id))
-        .filter(Telemetry.battery_id == payload.battery_id)
-        .scalar()
-    )
+    # 4. Thread-safe increment of per-battery counter
+    with counter_lock:
+        in_memory_counter[payload.battery_id] += 1
+        current_count = in_memory_counter[payload.battery_id]
 
-    # Trigger LSTM analysis every 10th message (only if enough data exists)
+    # Trigger LSTM analysis every 10th message
     if current_count % 10 == 0:
         if background_tasks is not None:
-            background_tasks.add_task(_run_lstm_with_guard, payload.battery_id)
+            background_tasks.add_task(run_lstm_prediction_task, payload.battery_id)
         else:
             # Run in worker executor thread to avoid blocking SQS poller event loop
             import asyncio
             try:
                 loop = asyncio.get_running_loop()
-                loop.run_in_executor(None, _run_lstm_with_guard, payload.battery_id)
+                loop.run_in_executor(None, run_lstm_prediction_task, payload.battery_id)
             except RuntimeError:
                 # Fallback to direct call if no loop is running
-                _run_lstm_with_guard(payload.battery_id)
+                run_lstm_prediction_task(payload.battery_id)
 
     # 5. Measure latency and log JSON format via structlog
     latency_ms = (time.perf_counter() - start_time) * 1000.0

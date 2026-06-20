@@ -7,7 +7,6 @@ import asyncio
 import json
 import logging
 import os
-import time
 import boto3
 from sqlalchemy.orm import Session
 
@@ -16,17 +15,6 @@ from models.schemas import IngestPayloadV2
 from services.ingest_service import ingest_telemetry_shared
 
 logger = logging.getLogger("sqs_poller")
-
-# Maximum entries tracked in the retry_counts dict before oldest are evicted.
-# Prevents unbounded memory growth if many unique messages fail over time.
-MAX_RETRY_ENTRIES = 10_000
-
-# Entries older than this (seconds) are purged on each cleanup pass.
-RETRY_ENTRY_TTL_SECONDS = 3600  # 1 hour
-
-# Backoff delay (seconds) after failing to route a message to the DLQ,
-# preventing a tight loop when the DLQ is persistently unreachable.
-DLQ_FAILURE_BACKOFF_SECONDS = 5.0
 
 
 def get_sqs_client():
@@ -89,50 +77,18 @@ def init_queues() -> None:
         logger.warning(f"Error during SQS queue initialization: {e}")
 
 
-def _cleanup_stale_retry_entries(
-    retry_counts: dict[str, dict], now: float
-) -> None:
-    """
-    Evict retry_counts entries whose timestamp exceeds the TTL.
-    Also enforces the hard cap by removing the oldest entries if over limit.
-    """
-    # 1. TTL-based eviction
-    stale_keys = [
-        k
-        for k, v in retry_counts.items()
-        if (now - v["ts"]) > RETRY_ENTRY_TTL_SECONDS
-    ]
-    for k in stale_keys:
-        del retry_counts[k]
-
-    # 2. Hard cap eviction (oldest first)
-    if len(retry_counts) > MAX_RETRY_ENTRIES:
-        sorted_keys = sorted(retry_counts, key=lambda k: retry_counts[k]["ts"])
-        excess = len(retry_counts) - MAX_RETRY_ENTRIES
-        for k in sorted_keys[:excess]:
-            del retry_counts[k]
-
-
 async def poll_loop(queue_url: str, dlq_url: str, stop_event: asyncio.Event) -> None:
     """
     Receive, validate, and process SQS messages.
     Ensures graceful shutdown, and handles retries for schema/parsing errors.
     """
     sqs = get_sqs_client()
-    # retry_counts stores {MessageId: {"count": int, "ts": float}}
-    retry_counts: dict[str, dict] = {}
-    last_cleanup = time.monotonic()
+    retry_counts = {}  # MessageId -> retry_count
 
     logger.info(f"Starting SQS poll loop for: {queue_url}")
 
     while not stop_event.is_set():
         try:
-            # Periodic cleanup (every 5 minutes)
-            now = time.monotonic()
-            if now - last_cleanup > 300:
-                _cleanup_stale_retry_entries(retry_counts, now)
-                last_cleanup = now
-
             # Poll messages in a thread pool (blocking call, up to 20s)
             response = await asyncio.to_thread(
                 sqs.receive_message,
@@ -179,21 +135,18 @@ async def poll_loop(queue_url: str, dlq_url: str, stop_event: asyncio.Event) -> 
                         ReceiptHandle=receipt_handle,
                     )
 
-                    # Clean up retry counters on success
-                    retry_counts.pop(msg_id, None)
+                    # Clean up retry counters
+                    if msg_id in retry_counts:
+                        del retry_counts[msg_id]
 
                 except Exception as e:
                     logger.error(f"Error processing SQS message {msg_id}: {e}")
+                    # Increment failure count
+                    retry_counts[msg_id] = retry_counts.get(msg_id, 0) + 1
 
-                    # Increment failure count with timestamp
-                    entry = retry_counts.get(msg_id, {"count": 0, "ts": time.monotonic()})
-                    entry["count"] += 1
-                    entry["ts"] = time.monotonic()
-                    retry_counts[msg_id] = entry
-
-                    if entry["count"] >= 3:
+                    if retry_counts[msg_id] >= 3:
                         logger.warning(
-                            f"Message {msg_id} failed {entry['count']} times. Sending to DLQ..."
+                            f"Message {msg_id} failed {retry_counts[msg_id]} times. Sending to DLQ..."
                         )
                         # SQS FIFO requires Group ID and Deduplication ID
                         msg_attrs = msg.get("Attributes", {})
@@ -224,12 +177,9 @@ async def poll_loop(queue_url: str, dlq_url: str, stop_event: asyncio.Event) -> 
                             logger.error(
                                 f"Failed to route message {msg_id} to DLQ: {dlq_err}"
                             )
-                            # Backoff to prevent tight loop when DLQ is unreachable
-                            await asyncio.sleep(DLQ_FAILURE_BACKOFF_SECONDS)
 
-                        # Always clean up the entry after DLQ attempt (success or failure)
-                        # to prevent infinite re-routing loops on the next receive
-                        retry_counts.pop(msg_id, None)
+                        if msg_id in retry_counts:
+                            del retry_counts[msg_id]
 
         except Exception as poll_err:
             logger.error(f"Error in SQS poll loop cycle: {poll_err}")

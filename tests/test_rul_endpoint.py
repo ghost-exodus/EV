@@ -103,7 +103,7 @@ def test_rul_endpoint_not_found(client):
 
 
 def test_rul_endpoint_no_predictions(client, db_session):
-    """GET /rul/{battery_id} returns graceful 200 with pending state if no predictions exist yet."""
+    """GET /rul/{battery_id} returns 404 if the battery exists but has no predictions."""
     battery = Battery(
         battery_id="EV_B0005_001",
         vehicle_id="VH_TESLA_042",
@@ -113,13 +113,8 @@ def test_rul_endpoint_no_predictions(client, db_session):
     db_session.commit()
 
     response = client.get("/api/v1/rul/EV_B0005_001")
-    assert response.status_code == 200
-
-    data = response.json()
-    assert data["battery_id"] == "EV_B0005_001"
-    assert data["predicted_rul_cycles"] == 0
-    assert data["model_version"] == "pending"
-    assert data["alert_level"] == "none"
-    assert data["message"] == "No RUL prediction available yet — LSTM runs every 10th ingest"
-    assert data["confidence_interval"]["confidence_percent"] == 0.0
-
+    assert response.status_code == 404
+    assert (
+        response.json()["detail"]["error"]
+        == "No RUL prediction found for this battery"
+    )

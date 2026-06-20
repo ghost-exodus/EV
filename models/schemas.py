@@ -49,7 +49,7 @@ class Measurements(BaseModel):
     )
     internal_resistance_ohm: Optional[float] = Field(
         None, 
-        description="Internal resistance in ohms (optional, persisted when provided)", 
+        description="Internal resistance in ohms (accepted but not persisted)", 
         examples=[0.056]
     )
 
@@ -509,6 +509,11 @@ class RULResponse(BaseModel):
         description="Battery pack ID", 
         examples=["B0047"]
     )
+    status: str = Field(
+        "ready",
+        description="Prediction status: 'ready' or 'pending'",
+        examples=["ready"]
+    )
     predicted_rul_cycles: int = Field(
         ..., 
         description="LSTM predicted remaining cycles before EOL threshold is hit", 
@@ -537,13 +542,26 @@ class RULResponse(BaseModel):
     )
     alert_level: str = Field(
         ..., 
-        description="Alert classification ('none', 'warning', or 'critical')", 
-        examples=["none"]
+        description="Alert classification ('healthy', 'warning', or 'critical')", 
+        examples=["healthy"]
     )
-    message: Optional[str] = Field(
-        None,
-        description="Optional diagnostic/availability message",
-        examples=["No RUL prediction available yet — LSTM runs every 10th ingest"]
+
+
+class RULPendingResponse(BaseModel):
+    battery_id: str = Field(
+        ...,
+        description="Battery pack ID",
+        examples=["B0047"]
+    )
+    status: str = Field(
+        "pending",
+        description="Prediction status: 'pending' — not yet available",
+        examples=["pending"]
+    )
+    message: str = Field(
+        ...,
+        description="Human-readable explanation of why the prediction is pending",
+        examples=["RUL prediction not yet available — insufficient telemetry data ingested."]
     )
 
 
