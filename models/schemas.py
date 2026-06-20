@@ -509,6 +509,11 @@ class RULResponse(BaseModel):
         description="Battery pack ID", 
         examples=["B0047"]
     )
+    status: str = Field(
+        "ready",
+        description="Prediction status: 'ready' or 'pending'",
+        examples=["ready"]
+    )
     predicted_rul_cycles: int = Field(
         ..., 
         description="LSTM predicted remaining cycles before EOL threshold is hit", 
@@ -539,6 +544,24 @@ class RULResponse(BaseModel):
         ..., 
         description="Alert classification ('healthy', 'warning', or 'critical')", 
         examples=["healthy"]
+    )
+
+
+class RULPendingResponse(BaseModel):
+    battery_id: str = Field(
+        ...,
+        description="Battery pack ID",
+        examples=["B0047"]
+    )
+    status: str = Field(
+        "pending",
+        description="Prediction status: 'pending' — not yet available",
+        examples=["pending"]
+    )
+    message: str = Field(
+        ...,
+        description="Human-readable explanation of why the prediction is pending",
+        examples=["RUL prediction not yet available — insufficient telemetry data ingested."]
     )
 
 

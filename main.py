@@ -76,6 +76,20 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# ── CORS — allow the React frontend dev server ───────────────────────────────
+from fastapi.middleware.cors import CORSMiddleware
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "http://localhost:5173",   # Vite dev server
+        "http://localhost:3000",   # Fallback / alternative
+    ],
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type"],
+)
+
 app.state.limiter = limiter
 app.add_middleware(SlowAPIMiddleware)
 
