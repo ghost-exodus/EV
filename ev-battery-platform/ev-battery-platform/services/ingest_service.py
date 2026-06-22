@@ -68,8 +68,8 @@ def run_lstm_prediction_task(battery_id: str) -> None:
         )
         soh_val = float(latest_soh.soh_percent) if latest_soh else None
 
-        # 3. Call predictive model
-        prediction_res = predict_rul(battery_id, recent_readings)
+        # 3. Call predictive model (pass soh_percent as the 5th feature the LSTM expects)
+        prediction_res = predict_rul(battery_id, recent_readings, soh_percent=soh_val)
 
         # 4. Insert into the database
         pred_row = RULPrediction(

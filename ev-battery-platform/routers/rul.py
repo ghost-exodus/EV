@@ -7,14 +7,14 @@ from sqlalchemy.orm import Session
 
 from db.models import Battery, RULPrediction
 from db.session import get_db
-from models.schemas import RULResponse, ConfidenceInterval, ErrorResponse
+from models.schemas import RULResponse, RULPendingResponse, ConfidenceInterval, ErrorResponse
 
 router = APIRouter()
 
 
 @router.get(
     "/rul/{battery_id}",
-    response_model=RULResponse,
+    response_model=RULResponse | RULPendingResponse,
     responses={404: {"model": ErrorResponse}},
     summary="Get latest RUL prediction details for a battery",
 )
@@ -22,6 +22,9 @@ def get_rul(battery_id: str, db: Session = Depends(get_db)):
     """
     Return the latest computed RUL prediction, confidence interval, and alert classification.
     Available to authenticated fleet_admin and operator users.
+
+    Returns a 200 with status="pending" if the battery exists but no prediction
+    has been computed yet (e.g. fewer than 10 telemetry messages ingested).
     """
     # 1. Check if battery registry entry exists
     battery = db.query(Battery).filter(Battery.battery_id == battery_id).first()
@@ -39,9 +42,11 @@ def get_rul(battery_id: str, db: Session = Depends(get_db)):
         .first()
     )
     if not pred:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail={"error": "No RUL prediction found for this battery"},
+        # Battery exists but no prediction yet — return 200 with pending status
+        return RULPendingResponse(
+            battery_id=battery_id,
+            status="pending",
+            message="RUL prediction not yet available — insufficient telemetry data ingested.",
         )
 
     # 3. Calculate alert level
@@ -55,6 +60,7 @@ def get_rul(battery_id: str, db: Session = Depends(get_db)):
 
     return RULResponse(
         battery_id=battery_id,
+        status="ready",
         predicted_rul_cycles=pred.predicted_rul_cycles,
         confidence_interval=ConfidenceInterval(
             lower_bound=pred.confidence_lower or 0,
@@ -67,3 +73,4 @@ def get_rul(battery_id: str, db: Session = Depends(get_db)):
         predicted_at=pred.predicted_at,
         alert_level=alert_level,
     )
+
